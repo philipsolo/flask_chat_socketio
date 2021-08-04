@@ -1,0 +1,539 @@
+<!--
+Name: Filippos Solomonidis
+
+This is the Chat handling template, its main build components are boostrap Jinja and Javascript, allowing for a dynamic
+loading and creation of conversations. Javascript is used to dynamically update new conversations and messages received
+and sent from the user, where as jinja is used to load a dictionary containing all user conversations and messages
+within that conversation. Finally Boostrap is used to design and make the template as dynamic as possible for all screen
+sizes
+-->
+<!DOCTYPE html>
+<!--suppress ALL -->
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta content="width=device-width, initial-scale=1.0, shrink-to-fit=no" name="viewport">
+	<title>Chat</title>
+	<link href="../static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+	<link href="../static/bootstrap/fonts/font-awesome.min.css" rel="stylesheet">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+	<script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.6/socket.io.min.js" type="text/javascript"></script>
+    <style>
+        html, body {
+        background: #003a65; !important;
+        position: fixed;
+        overflow-x: hidden;
+        overflow-y: hidden;
+        width: 100%;
+        height: 100%;
+        margin: auto;
+        top:0;
+        bottom:0;
+        left:0;
+        right:0;
+        }
+
+        .message-area {
+        height: 70vh;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        }
+
+        .messages-box {
+        overflow-y: auto;
+        }
+
+        .container {
+        justify-content: space-between;
+        align-content: space-between;
+        }
+
+        .flex {
+        display: flex;
+        flex-wrap: wrap;
+        }
+
+        .btn:focus {
+        outline: none;
+        }
+
+        .form-control:focus {
+        border-color: none;
+        box-shadow: none;
+        }
+    </style>
+
+    {% block javascript %}
+        <script charset="utf-8" type="text/javascript">
+        /**
+         * The Javascript code is within the page in as it is all created for the Chat functionality and communicates
+         * directily with this HTML, making it harder to understand if seperated in JS files and categories.
+         */
+
+
+            var curr_room = ""
+            var local_user = null
+
+            function home_redirect(){
+                socket.disconnect();
+                window.location.assign('/');
+            }
+
+            function get_form() {
+                /**
+                 * Function called once new chat is created, form containing chat name and members
+                 * is passed here and  delivered to flask via ajax
+                  */
+                var js = $("form").serializeArray()
+                $.ajax({
+                    type: "POST",
+                    contentType: "application/json; charset=utf-8",
+                    url: "/chat/create_chat",
+                    data: JSON.stringify(js),
+                    success: function (data) {
+                        if (data.status === 'OK'){
+                            window.location.assign('/chat');
+                        }
+                        else
+                            window.alert("Error creating chat");
+                            window.location.assign('/chat');
+                            },
+                    dataType: "json"
+                })
+            }
+
+            function add_users(){
+                /**
+                 * Performs request to frontend requesting users in database,  and later adding response to a table
+                 */
+                document.getElementById("tbody_users").innerHTML = '<span role="status" class="spinner-border"></span>'
+                fetch('/chat/get_users').then(function (response) {
+                    return response.json();
+                }).then(function (text) {
+                    var tbody = "";
+                    for (let value in text) {
+                        tbody +=
+                            `<tr>
+                             <td class="text-center"><input type="checkbox" name="${value}" id="${value}"/></td>
+                             <td>${text[value]['name']}</td>
+                             <td>${text[value]['course']}</td>
+                             </tr>`;
+                    }
+                    tbody += "";
+                    document.getElementById("tbody_users").innerHTML = tbody;
+                    });
+            }
+
+            function search_table() {
+                /**
+                 * Function allowing search of users table (when modal when creating new chat), partly adapted version
+                 * from https://www.w3schools.com/howto/howto_js_filter_table.asp
+                 */
+                var input, filter, table, tr, td, i, txtValue;
+                input = document.getElementById("user_search_input");
+                filter = input.value.toUpperCase();
+                table = document.getElementById("user_table");
+                tr = table.getElementsByTagName("tr");
+                for (i = 0; i < tr.length; i++) {
+                    td = tr[i].getElementsByTagName("td")[1];
+                      if (td) {
+                        txtValue = td.textContent || td.innerText;
+                      if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                      }
+                      else {
+                        tr[i].style.display = "none";
+                      }
+                    }
+                }
+            }
+
+            function get_time(){
+                /**
+                 * Funtion to grab the current time
+                 * @return String "time | date"
+                 */
+                var today = new Date();
+                var date = (today.toLocaleString('default', { month: 'short' }))+' '+today.getDate();
+                var time = today.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return time + ' | ' + date
+            }
+
+
+            function update_recent_conv(data, picture){
+                /**
+                 * Update conversations tab with latest message, time and picture
+                 * @type {string|*|jQuery}
+                 */
+
+                document.getElementById(data.room_id+'last').innerHTML = data.msg
+                document.getElementById(data.room_id+'time').innerHTML = get_time()
+                $("#"+data.room_id+'user_pict').attr("src",picture);
+            }
+
+            //Send message when enter pressed
+            $(document).on("keypress", "input", function(e){
+            if(e.which === 13){
+                var inputVal = $(this).val();
+                send_message(curr_room)
+            }
+            });
+
+            $(document).ready(function(){
+                /**
+                 * Establish a websocket connection with the backend, all socket.io handling functions are performed here
+                 */
+                socket = io.connect('ws://' + location.host  +'/chat', {secure:true,pingInterval:10000,pingTimeout:10000});
+                socket.on('connect', function() {
+                    // Send Message to backend once connection established
+                    socket.emit('joined', {'name':local_user, 'time':get_time()});
+                });
+
+                socket.on('connect_failed', function() {
+                    alert("There seems to be an issue with the connection");
+                })
+
+                socket.on('status', function(data) {
+                    // Once the user connects set a name that displays personal messages as sent by him
+                    if (local_user === null){
+                        local_user = data.name
+                    }
+
+                    if (local_user != data.name || data.type == 'join'){
+                        update_recent_conv(data, "../static/images/chat/server_image.png")
+                        var scroll_loc = document.getElementById(data.room_id+'message-area');
+                        var chat_loc = $('#'+data.room_id+'chat');
+                        $(chat_loc).append('<div class="alert alert-'+data.color +' mx-auto text-center" role="alert" style="width: 50%">' +
+                            '<h6 class="alert-heading"><strong>'+data.name+'</strong> '+data.msg+'</h6><span>'+ get_time()+'</span></div>')
+                        scroll_loc.scrollTop = scroll_loc.scrollHeight;}
+                });
+
+                // Once a text message arrives
+                socket.on('internal_msg', function(data) {
+                    //last message in conversation location
+                    var msg_loc = $('#'+data.room_id+'chat');
+                    //Location to scroll to the bottom
+                    var scroll_loc = document.getElementById(data.room_id+'message-area');
+
+                   update_recent_conv(data, data.picture)
+                    // Check if message is from user and append it
+                    if (data.name === local_user){
+                        $(msg_loc).append('<div class="row justify-content-end text-break">\n' +
+                       '                        <div class="col-md-10">\n' +
+                       '                            <div class="media w-50 mb-2 ml-auto mr-4">\n' +
+                       '                                <div class="media-body ml-3">\n' +
+                       '                                   <div class="bg-primary rounded py-2 px-3 mb-2">\n' +
+                       '                                    <p class="text-small mb-0 text-white">'+data.msg+'<\/p>\n' +
+                       '                             <\/div>\n' +
+                       '                             <p class="small text-muted">'+get_time()+'<\/p>\n' +
+                       '                                <\/div>\n' +
+                       '                            <\/div>\n' +
+                       '                        <\/div>\n' +
+                       '                    <\/div>')
+                        scroll_loc.scrollTop = scroll_loc.scrollHeight;
+                    }
+                    else {
+                        $(msg_loc).append('\t\t<div class="media w-50 mb-2 text-break" style="margin-left:5%">\n' +
+                           '\t\t\t<img alt='+data.name+' class="rounded-circle" src="'+data.picture+' "width="50">\n' +
+                           '\t\t\t<div class="media-body ml-3">\n' +
+                           '\t\t\t\t<div class="bg-light rounded py-2 px-3 mb-2">\n' +
+                           '\t\t\t\t\t<p class="text-small mb-0 text-muted">'+data.msg+'</p>\n' +
+                           '\t\t\t\t</div>\n' +
+                           '\t\t\t\t<p class="small text-muted">'+get_time()+'</p>\n' +
+                           '\t\t\t</div>\n' +
+                           '\t\t</div>')
+                        scroll_loc.scrollTop = scroll_loc.scrollHeight;
+                    }
+                });
+                // Upade message id to the current tab to send to the correct room
+                $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                    //Collapse main navbar on small screens when differant chat is pressed
+                    if ($(window).width() < 720) {
+                        $('#navcol-1').collapse('hide')
+                    }
+                    //Check currently joined chat
+                    var currId = $(e.target).attr("id");
+                    curr_room = currId
+                    //Scroll to bottom when tab clicked
+                    var scroll_loc = document.getElementById(currId+'message-area');
+                    scroll_loc.scrollTop = scroll_loc.scrollHeight;
+                })
+            });
+
+            function checkEmpty(str) {
+                /**
+                 * Check if the string is empty
+                 * @return Boolean (True if empty)
+                 */
+                return (!str || 0 === str.length);
+            }
+
+            function send_message(but_id){
+                /**
+                 * Area where user messages are sent from
+                 * @param {String} is used to find which chat the mssage is from (all chats have a unique id)
+                 */
+                text = $('#text'+but_id).val();
+                $('#text'+but_id).val('');
+                if (!checkEmpty(text)){
+                    socket.emit('text', {msg: text, time:get_time(), name:local_user, room_id:but_id});
+                }
+            }
+
+            function leave_room(room_id) {
+                /**
+                 * Function called when the users clicks to exit
+                 * @param {String} is used to find chat room id and exit correct room (all chats have a unique id)
+                 */
+                socket.emit('exit_room', {msg: "Room exit request", time:get_time(), name:local_user, room_id:room_id}, function() {
+                    //Clear All tabs and Conversations from fron-end
+                    document.getElementById('tabChat-'+room_id).remove();
+                    document.getElementById(room_id).remove();
+
+                    // If user exits the random chat, add a button for him to join Random again
+                    if (room_id.includes("Random")){
+                        $('#button_loc').append('<div class="row no-gutters mt-1">' +
+                           '<div class="col text-center">' +
+                           '<button class="btn btn-outline-info btn-lg"  onclick="join_random()"><i class="fa fa-users"></i> Random Chat</button>' +
+                           '</div></div>'
+                        )
+                    }
+                });
+            }
+           function join_random() {
+                /**
+                * once received in frontend joins the user to a random chat, then refreshes the page to load changes
+               */
+                socket.emit('join_random', {msg: "Join random request", time:get_time(), name:local_user}, function() {
+                    window.location.assign('/chat');
+                });
+            }
+	</script>
+    {% endblock %}
+</head>
+<body>
+
+{#Display message as external user#}
+{% macro ext_user(msg,time,user_image) %}
+		<div class="media w-50 mb-2 text-break" style="margin-left:5%">
+            <img alt="user" class="rounded-circle" src="{{user_image}}" width="50">
+            <div class="media-body ml-3">
+                <div class="bg-light rounded py-2 px-3 mb-2">
+					<p class="text-small mb-0 text-muted">{{msg}}</p>
+                </div>
+                <p class="small text-muted">{{time}}</p>
+            </div>
+        </div>
+{% endmacro %}
+
+{#Display message as internal user#}
+{% macro int_user(msg,time) %}
+         <div class="media w-50 mb-2 ml-auto mr-4 text-break" >
+              <div class="media-body ml-3">
+                 <div class="bg-primary rounded py-2 px-3 mb-2">
+                     <p class="text-small mb-0 text-white">{{msg}}
+                 </div>
+                  <p class="small text-muted">{{time}}</p>
+              </div>
+         </div>
+{% endmacro %}
+
+{#Macro called for a server alert#}
+{% macro server_msg(msg,time) %}
+<div class="alert alert-secondary text-center mt-2  mb-2" style="width: 60%; margin:auto; display: table" role="alert"><h6 class="alert-heading"><strong>{{msg}}</strong> </h6><span>{{ time }}</span></div>
+{% endmacro %}
+
+{#Recent conversations tab showing name, recent message, picture etc#}
+{% macro conv(name, time, room, last_msg, picture="../static/images/random-chat-icon.png") %}
+		<a class="list-group-item list-group-item-action rounded-0 text-break" id="{{room}}" data-toggle="tab" href="#tabChat-{{room}}" role="tab">
+		<div class="media">
+			<img alt="user" class="rounded-circle d-none d-lg-block" id="{{ room }}user_pict" src="{{picture}}" width="50">
+			<div class="media-body ml-4">
+				<div class="d-flex align-items-center justify-content-between mb-1">
+					<h6 class="mb-0">{{name}} </h6><small id="{{ room }}time" class="small font-weight-bold d-none d-lg-block">{{time}}</small>
+
+                    <button value="{{ room }}" name="exit_butt" onclick="leave_room(this.value)" type="button" class="btn btn-danger d-md-none"><i class="fa fa-close"></i>&nbsp;Exit</button>
+				</div>
+				<p class="font-italic mb-0 text-small d-none d-lg-block" id="{{ room }}last">{{ last_msg }}</p>
+			</div>
+		</div></a>
+{% endmacro %}
+
+{#Content within tab iterates over messages and adds depending if local user, server or external#}
+{% macro tab_cont(msg_dict,room_id) %}
+		<div aria-labelledby="home-tab" class="tab-pane" id="tabChat-{{ room_id }}" role="tabpanel">
+            <div class="bg-white">
+                <div class="message-area" id="{{ room_id }}message-area">
+					<div id="{{ room_id }}chat">
+                        {% for item in msg_dict %}
+                            {% if user_name == item['name']%}
+                                {{int_user(item['msg'],item['time'])}}
+                            {% elif 'server' == item['name']%}
+                                {{server_msg(item['msg'],item['time'])}}
+                            {% else %}
+                                {{ext_user(item['msg'],item['time'],item['picture'])}}
+                            {% endif %}
+						{% endfor %}
+					</div>
+                </div>
+            </div>
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <button value="{{ room_id }}" name="exit_butt" onclick="leave_room(this.value)" type="button" class="btn btn-danger btn-lg rounded-0 d-none d-md-block"><i class="fa fa-close"></i>&nbsp;Exit</button>
+                </div>
+                <input type="text" id="text{{ room_id }}" placeholder="Enter message" class="form-control rounded-0 border-0 py-4 bg-light text-break">
+                <div class="input-group-append">
+                    <button type="button"  id="{{ room_id }}" onclick="send_message(this.id)" class="btn btn-primary btn-lg rounded-0"><i class="fa fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+{% endmacro %}
+
+{#Main Html elemet adding items depening on the conversations dictionart passed by flask#}
+<div class="jumbotron vertical-center" style="background:#003a65;">
+    <div class="container">
+        <div class="row rounded-lg overflow-hidden shadow">
+            <div class="col-md-4 px-0 bg-light">
+                <nav class="navbar navbar-light navbar-expand-md absolute">
+                    <button data-toggle="collapse" data-target="#navcol-1" class="navbar-toggler"><span class="sr-only">Toggle navigation</span><span class="navbar-toggler-icon"></span></button>
+                    <div class="collapse navbar-collapse show" id="navcol-1">
+                        <ul class="nav navbar-nav" style="width: 100%;">
+                            <li class="nav-item" style="width: 100%;">
+
+                                <div class="bg-gray px-4 py-2 bg-light">
+
+                                    <p class="h5 mb-0 py-1">Chats</p>
+                                </div>
+
+
+                                <div class="messages-box">
+                                    <div class="list-group rounded-0 active " id="myTab" role="tablist">
+                                        {#Iterate over ditionary rooms and random chats adding each
+                                            conversation and message using macros#}
+                                      {% for key, value in prev_msg['rooms'].items() %}
+                                          {% set last_msg = value['msgs']|last %}
+                                          {{ conv(value['room_name'],last_msg['time'],key,last_msg['msg'],last_msg['picture']) }}
+                                      {% endfor %}
+                                        {% if prev_msg['random_chat']|length > 0 %}
+                                            {% for key, value in prev_msg['random_chat'].items() %}
+                                                {% set last_msg = value['msgs']|last %}
+                                                {{ conv('Random Chat',last_msg['time'],key,last_msg['msg']) }}
+                                            {% endfor %}
+                                        {% endif %}
+                                        <a class="list-group-item list-group-item-action  text-white rounded-0">
+                                            <div class="media">
+                                                <div class="media-body ml-4" id="button_loc">
+
+                                                <div class="row no-gutters mt-1">
+                                                        <div class="col text-center">
+                                                 <button class="btn btn-danger" onclick="home_redirect()" type="button" role="button" href="/"><i class="fa fa-home fa-2x"></i></button></div></div>
+
+
+                                                    <div class="row no-gutters mt-1">
+                                                        <div class="col text-center">
+                                                            <button class="btn btn-outline-primary btn-lg" data-toggle="modal" data-target="#exampleModal"><i class="fa fa-users"></i> New</button>
+                                                        </div>
+                                                    </div>
+
+
+                                                    {% if prev_msg['random_chat']|length == 0 %}
+                                                        <div class="row no-gutters mt-1">
+                                                            <div class="col text-center">
+                                                                <button class="btn btn-outline-info btn-lg"  onclick="join_random()"><i class="fa fa-wechat"></i> Random Chat</button>
+                                                            </div>
+                                                        </div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </a>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </nav>
+            </div>
+            <div class="col px-0 bg-white">
+                <div  class="tab-content">
+                    <div class="tab-pane fade show active">
+                        <div style="justify-content: center;" class="row no-gutters">
+                            <div style="" class="col-sm-9 align-self-center">
+                                <div class="jumbotron bg-white">
+                                    <div class="card shadow text-center">
+                                        <div class="card-body">
+                                            <h4 class="card-title">Conversation Area</h4>
+                                            <h6 class="text-muted card-subtitle mb-2">What are you waiting for? hop on a chat</h6>
+                                            <p class="card-text"></p><a class="card-link" href="/">Home</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {#Iterate over dictionary to add tabs on the left of the chat linking the conversation by room id#}
+                    {% for key, value in prev_msg['rooms'].items() %}
+                        {{tab_cont(prev_msg['rooms'][key]['msgs'], key)}}
+                    {% endfor %}
+
+                    {% for key, value in prev_msg['random_chat'].items() %}
+                        {{tab_cont(prev_msg['random_chat'][key]['msgs'], key)}}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+      <form  onsubmit="get_form()" id="new_chat" method="post">
+          <div class="modal-content">
+              <div class="modal-header">
+                  <h5 class="modal-title" id="exampleModalLongTitle">Create Chat</h5>
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                      <span aria-hidden="false">&times;</span>
+                  </button>
+              </div>
+              <div class="modal-body" style="max-height: 60vh; overflow-y: scroll">
+                  <div class="row text-left no-gutters mt-1" style="max-height: 60vh; overflow-y: auto">
+                      <div class="col" style="margin: 1%;">
+                          <input type="search" class="form-control-sm" id="user_search_input" onkeyup="search_table()" autofocus placeholder="Search User" style="border-top-style: none;border-right-style: none;border-bottom-style: solid;border-bottom-color: var(--blue);border-left-style: none;" />
+                      </div>
+                  </div>
+                  <table class="table table-striped table-bordered table-hover" id="user_table">
+                      <thead id="thead_users">
+                      <tr>
+                          <th class="text-center"><i class="fa fa-plus"></i></th>
+                          <th>Name</th>
+                          <th>School</th>
+                      </tr>
+                      </thead>
+
+                      <tbody id="tbody_users" class="text-center">
+                      {#Inserted by javascript call once button clicked#}
+                      </tbody>
+                  </table>
+              </div>
+              <div class="modal-footer">
+                  <div class="col text-center">
+                      <input type="text" name="chat_name" autofocus="" placeholder="Chat name..." style="border-bottom-right-radius: 12px;border-bottom-left-radius: 12px;border-top-style: none;border-right-style: none;border-bottom: 2px solid var(--blue) ;border-left-style: none;" required="" minlength="5" maxlength="15" class="form-control">
+                      <button class="btn btn-outline-primary btn-lg" onclick="get_form()" type="button" style="margin-top: 2%;margin-left: 3%;"><i class="fa fa-comments"></i> Create</button>
+                  </div>
+              </div>
+          </div>
+      </form>
+  </div>
+</div>
+
+<script>
+$('#exampleModal').on('shown.bs.modal', function () {
+    add_users()
+  $('#myInput').trigger('focus')
+})
+</script>
+
+<script src="../static/bootstrap/js/bootstrap.min.js"></script>
+</body>
+</html>

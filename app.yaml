@@ -1,0 +1,19 @@
+#app.yaml
+runtime: python37
+entrypoint: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 main:app
+#service: chattest
+
+network:
+  session_affinity: true
+
+# Update with Redis instance details
+env_variables:
+  REDISHOST: '<REDIS_IP>'
+  REDISPORT: '6379'
+  SERVICE_ACCOUNT_DIR: 'serviceAccountKey.json'
+# Update with Serverless VPC Access connector details
+vpc_access_connector:
+  name: <REDIS CONNECTOR>
+
+
+
