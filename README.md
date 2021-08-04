@@ -4,21 +4,20 @@
 A lightweight chat application I created as part of a team project coursework for University using Python, JS, Redis 
 and Bootstrap. I have only included the parts necessary for the chat to function written by me. Other parts 
 have mixed code with teammates and are beyond the scope of this repository.
+---
 
-
-- [Flask Socket IO Chat 💬](#flask-socket-io-chat---)
-    * [Notes 🎶](#notes---)
-    * [Demo & Functionality  🎥](#demo---functionality----)
+## Table of Contents
+- [Flask Socket IO Chat 💬](#flask-socket-io-chat-)
+    * [Notes 🎶](#notes)
+    * [Demo & Functionality  🎥](#Demo-&-Functionality)
         + [Chat window](#chat-window)
         + [Multiple Users](#multiple-users)
-    
-    * [Structure 🏗️](#structure----)
+    * [Structure 🏗️](#structure-)
         + [Frontend (Main Components)](#frontend--main-components-)
-            - [An example of the tab macro:](#an-example-of-the-tab-macro-)
         + [Backend (Main Components)](#backend--main-components-)
-    * [Build & Deployment 🚀](#build---deployment---)
-        + [Local Run 💻](#local-run---)
-        + [GCP ☁ ️](#gcp----)
+    * [Build & Deployment 🚀](#build-deployment-)
+        + [Local Run 💻](#local-run-)
+        + [GCP ☁ ️](#gcp)
 
     
 ## Notes 🎶
