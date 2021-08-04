@@ -6,7 +6,21 @@ and Bootstrap. I have only included the parts necessary for the chat to function
 have mixed code with teammates and are beyond the scope of this repository.
 
 
+- [Flask Socket IO Chat 💬](#flask-socket-io-chat---)
+    * [Notes 🎶](#notes---)
+    * [Demo & Functionality  🎥](#demo---functionality----)
+        + [Chat window](#chat-window)
+        + [Multiple Users](#multiple-users)
+    
+    * [Structure 🏗️](#structure----)
+        + [Frontend (Main Components)](#frontend--main-components-)
+            - [An example of the tab macro:](#an-example-of-the-tab-macro-)
+        + [Backend (Main Components)](#backend--main-components-)
+    * [Build & Deployment 🚀](#build---deployment---)
+        + [Local Run 💻](#local-run---)
+        + [GCP ☁ ️](#gcp----)
 
+    
 ## Notes 🎶
 
 ---
@@ -30,7 +44,7 @@ have mixed code with teammates and are beyond the scope of this repository.
  
 
 ## Demo & Functionality  🎥
-###Chat window
+### Chat window
 ![Gif displaing Chat features and UI](example_gifs/chat_responsiveness.gif)
 
 
@@ -48,7 +62,7 @@ have mixed code with teammates and are beyond the scope of this repository.
 required are also included within. Once a new chat is created in a functional programming manner a macro for a tab is first 
 called, then a macro for the contents, and within that a macro for the dictionary of messages is called.
 
-####An example of the tab macro:
+#### An example of the tab macro:
 ```html
 {% macro tab_cont(msg_dict,room_id) %}
     <div aria-labelledby="home-tab" class="tab-pane" id="tabChat-{{ room_id }}" role="tabpanel">
@@ -191,7 +205,7 @@ Important Note for Socket IO purposes 1 Gunicorn Worker setup must be implemente
 ---
 ## Build & Deployment 🚀
 
-###Local Run 💻
+### Local Run 💻
 After cloning the Repo install requirements. 
 
 **Important** install the provided versions to avoid bugs, I found multiple 
@@ -213,7 +227,7 @@ The Auth for this web app is implemented using Firebase, but the frontend is not
 management class is, a simple JSON with the required parameters can be passed to mimic auth. WTF-forms can be used for a 
 quick form before entering the Chat.
 
-###GCP ☁ ️
+### GCP ☁ ️
 - Setup [Redis](https://cloud.google.com/memorystore/docs/redis/creating-managing-instances) on GCP 
 
 
